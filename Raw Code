@@ -1,0 +1,109 @@
+## Import necessary libraries
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.tree import DecisionTreeClassifier
+import re
+import nltk
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+# Load the dataset
+dataset = pd.read_csv("SMSSpamCollection", sep='\t', names=['label', 'message'])
+# Convert labels to binary format: 'ham' to 0, 'spam' to 1
+dataset['label'] = dataset['label'].map({'ham': 0, 'spam': 1})
+
+# Visualize the dataset distribution
+plt.figure(figsize=(8, 8))
+sns.countplot(x='label', data=dataset)
+plt.title('Countplot for Spam vs Ham as Imbalanced Dataset')
+plt.xlabel('Is the SMS Spam?')
+plt.ylabel('Count')
+plt.show()
+
+# Print details about the dataset
+print(f'Total Number of SMS: {len(dataset)}')
+print(f'Number of Spam SMS: {dataset["label"].sum()}')
+print(f'Number of Ham SMS: {len(dataset) - dataset["label"].sum()}')
+
+# Feature Engineering
+dataset['word_count'] = dataset['message'].apply(lambda x: len(x.split()))
+dataset['contains_currency_symbols'] = dataset['message'].apply(lambda x: any(symbol in x for symbol in ['$', '£', '¥', '₹', '€']))
+dataset['contains_number'] = dataset['message'].apply(lambda x: any(char.isdigit() for char in x))
+
+# Text Cleaning and Preprocessing
+nltk.download('stopwords')
+nltk.download("wordnet")
+wnl = WordNetLemmatizer()
+
+def preprocess_text(sms):
+    message = re.sub('[^a-zA-Z]', ' ', sms)  # Remove special characters and numbers
+    message = message.lower()
+    words = message.split()
+    filtered_words = [wnl.lemmatize(word) for word in words if word not in stopwords.words('english')]
+    return ' '.join(filtered_words)
+
+dataset['cleaned_message'] = dataset['message'].apply(preprocess_text)
+
+# TF-IDF Vectorization
+tfidf = TfidfVectorizer(max_features=500)
+x = tfidf.fit_transform(dataset['cleaned_message']).toarray()
+y = dataset['label']
+
+# Train-test split
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
+
+# Naive Bayes Model
+mnb = MultinomialNB()
+mnb.fit(x_train, y_train)
+y_pred = mnb.predict(x_test)
+
+# Evaluation of Naive Bayes
+print("Naive Bayes Model Performance:")
+print(classification_report(y_test, y_pred))
+cm = confusion_matrix(y_test, y_pred)
+plt.figure(figsize=(8, 8))
+sns.heatmap(cm, annot=True, fmt='d', xticklabels=['Ham', 'Spam'], yticklabels=['Ham', 'Spam'], cmap="Blues")
+plt.title("Confusion Matrix for Naive Bayes")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.show()
+
+# Decision Tree Model
+dt = DecisionTreeClassifier()
+dt.fit(x_train, y_train)
+y_pred_dt = dt.predict(x_test)
+
+# Evaluation of Decision Tree
+print("Decision Tree Model Performance:")
+print(classification_report(y_test, y_pred_dt))
+cm_dt = confusion_matrix(y_test, y_pred_dt)
+plt.figure(figsize=(8, 8))
+sns.heatmap(cm_dt, annot=True, fmt='d', xticklabels=['Ham', 'Spam'], yticklabels=['Ham', 'Spam'], cmap="Greens")
+plt.title("Confusion Matrix for Decision Tree")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.show()
+
+# Prediction Function
+def predict_spam(sms):
+    processed_sms = preprocess_text(sms)
+    vectorized_sms = tfidf.transform([processed_sms]).toarray()
+    return mnb.predict(vectorized_sms)[0]
+
+# Predictions
+sample_messages = [
+    "IMPORTANT - You could be entitled up to $3,160 in compensation from mis-sold PPI on a credit card or loan.",
+    "Hey, are we still on for dinner tonight?",
+    "WINNER! You have won a lottery of $1000. Claim your prize now!",
+    "Meeting rescheduled to tomorrow at 10 AM. Please confirm attendance.",
+    "Get a discount on your next purchase! Visit our website for more details."
+]
+
+for msg in sample_messages:
+    label = predict_spam(msg)
+    print ( f"Message: {msg}\nPrediction: {'SPAM' if label == 1 else 'HAM'}\n")
